@@ -49,6 +49,28 @@
     return words.some(word => text.includes(norm(word)));
   }
 
+  function log(...args) {
+    console.info('[FlashForge AD5X]', ...args);
+  }
+
+  function showStatus(message) {
+    let el = document.getElementById('mw-flashforge-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'mw-flashforge-toast';
+      Object.assign(el.style, {
+        position: 'fixed', right: '24px', bottom: '24px', zIndex: '2147483647',
+        background: '#202020', color: '#fff', border: '1px solid #3a3a3a', borderRadius: '10px',
+        padding: '12px 16px', font: '14px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
+        boxShadow: '0 8px 30px rgba(0,0,0,.35)', maxWidth: '380px'
+      });
+      document.documentElement.appendChild(el);
+    }
+    el.textContent = message;
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.remove(), 8000);
+  }
+
   function isDownload3mfText(text) {
     if (!text) return false;
     const selfText = norm(`${LABEL} FlashForge AD5X`);
@@ -117,22 +139,39 @@
   }
 
   async function startConversion(button) {
+    log('floating button clicked');
+    showStatus('Procurando o botao "Baixar 3MF"...');
     const original = findDownload3mfAction();
     if (!original) {
+      log('download button not found');
       alert('Não encontrei o botão “Baixar 3MF” nesta página. Abra um modelo/perfil de impressão e tente novamente.');
       return;
     }
 
+    log('download target found', {
+      tag: original.tagName,
+      text: norm(original.textContent).slice(0, 140),
+      className: original.className
+    });
     setButtonBusy(button, true);
     try {
+      showStatus('Acionando o download original do MakerWorld...');
       const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD' });
+      log('background arm response', response);
       if (!response?.ok) {
+        setButtonBusy(button, false);
         alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
         return;
       }
       original.click();
-      setTimeout(() => setButtonBusy(button, false), 2500);
+      showStatus('Clique enviado. Aguardando o Chrome detectar o download...');
+      clearTimeout(button._resetTimer);
+      button._resetTimer = setTimeout(() => {
+        setButtonBusy(button, false);
+        showStatus('Ainda nao recebi um download 3MF. Teste o botao verde original para confirmar se ele baixa nesta pagina.');
+      }, 24000);
     } catch (error) {
+      log('conversion start failed', error);
       setButtonBusy(button, false);
       alert('Falha ao iniciar a conversão: ' + (error?.message || error));
     }
@@ -254,11 +293,26 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type !== 'FLASHFORGE_STATUS') return;
   const button = document.getElementById('mw-flashforge-ad5x-button');
   if (button instanceof HTMLButtonElement) {
-    button.disabled = false;
-    button.setAttribute('aria-busy', 'false');
     const main = button.querySelector('[data-main]');
-    if (main) main.textContent = 'Baixar AD5X';
+    const message = msg.message || '';
+    if (message.startsWith('Download detectado')) {
+      clearTimeout(button._resetTimer);
+      button._resetTimer = setTimeout(() => {
+        button.disabled = false;
+        button.setAttribute('aria-busy', 'false');
+        if (main) main.textContent = 'Baixar AD5X';
+      }, 120000);
+      if (main) main.textContent = 'Convertendo...';
+    } else if (message.startsWith('Pronto') || message.startsWith('Falha') || message.startsWith('Nao detectei')) {
+      button.disabled = false;
+      button.setAttribute('aria-busy', 'false');
+      clearTimeout(button._resetTimer);
+      if (main) main.textContent = 'Baixar AD5X';
+    } else if (main && message.startsWith('Aguardando')) {
+      main.textContent = 'Preparando...';
+    }
   }
+  console.info('[FlashForge AD5X]', msg.message);
 
   let el = document.getElementById('mw-flashforge-toast');
   if (!el) {
