@@ -119,9 +119,9 @@
     return score;
   }
 
-  function findAction(kind) {
+  function findAction(kind, root = document) {
     let best = null;
-    const candidates = document.querySelectorAll(SEARCH_SELECTOR);
+    const candidates = root.querySelectorAll(SEARCH_SELECTOR);
     for (const el of candidates) {
       if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
       if (el.id === ID || el.closest(`#${ID}`)) continue;
@@ -137,6 +137,35 @@
       if (!best || score > best.score) best = { target, score };
     }
     return best?.target || null;
+  }
+
+  function findNearbyAction(anchor, kind) {
+    for (let cur = anchor?.parentElement; cur && cur !== document.body; cur = cur.parentElement) {
+      const found = findAction(kind, cur);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function isValidInjectedItem(item) {
+    if (!(item instanceof HTMLElement) || !isVisible(item)) return false;
+    const parent = item.parentElement;
+    if (!parent) return false;
+    return Array.from(parent.children).some(child => (
+      child !== item &&
+      child instanceof HTMLElement &&
+      isVisible(child) &&
+      matchesActionText(norm(child.textContent), 'stlCad')
+    ));
+  }
+
+  function hasInjectedItemInOpenMenu() {
+    let valid = false;
+    for (const item of document.querySelectorAll(`#${ID}`)) {
+      if (isValidInjectedItem(item)) valid = true;
+      else item.remove();
+    }
+    return valid;
   }
 
   function findInsertionParent(source, required = []) {
@@ -170,8 +199,15 @@
     }
   }
 
-  async function startConversion() {
-    const original = findAction('3mf');
+  async function startConversion(preferredOriginal) {
+    const existing = document.getElementById(ID);
+    const original = (
+      preferredOriginal instanceof HTMLElement &&
+      document.contains(preferredOriginal) &&
+      isVisible(preferredOriginal)
+    )
+      ? preferredOriginal
+      : findNearbyAction(existing, '3mf') || findAction('3mf');
     if (!original) {
       alert('Não encontrei a opção “Download 3MF”. Feche e abra o menu de download novamente.');
       return;
@@ -187,26 +223,26 @@
   }
 
   function inject() {
-    if (injecting || document.getElementById(ID)) return;
+    if (injecting || hasInjectedItemInOpenMenu()) return;
     injecting = true;
     try {
-      const original3mf = findAction('3mf');
       const stl = findAction('stlCad');
-      const bambu = findAction('bambu');
-      const source = stl || bambu || original3mf;
-      if (!source || !original3mf) return;
+      if (!stl) return;
 
-      const parent = findInsertionParent(source);
+      const original3mf = findNearbyAction(stl, '3mf') || findAction('3mf');
+      if (!original3mf) return;
+
+      const parent = findInsertionParent(stl);
       if (!parent) return;
 
-      const item = source.cloneNode(true);
+      const item = stl.cloneNode(true);
       item.id = ID;
       item.removeAttribute('href');
       item.removeAttribute('download');
       item.removeAttribute('disabled');
       item.removeAttribute('aria-disabled');
       item.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
-      item.setAttribute('role', source.getAttribute('role') || 'menuitem');
+      item.setAttribute('role', stl.getAttribute('role') || 'menuitem');
       if (item.tabIndex < 0) item.tabIndex = 0;
 
       replaceVisibleText(item);
@@ -218,10 +254,10 @@
       item.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        startConversion();
+        startConversion(original3mf);
       }, true);
 
-      if (source.parentElement === parent) source.insertAdjacentElement('afterend', item);
+      if (stl.parentElement === parent) stl.insertAdjacentElement('afterend', item);
       else parent.appendChild(item);
     } finally {
       injecting = false;
