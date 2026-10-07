@@ -1,4 +1,6 @@
-const SAO_PAULO_KWH_PRICE = 0.78938;
+const SAO_PAULO_BASE_KWH_PRICE = 0.78938;
+const YELLOW_FLAG_KWH_SURCHARGE = 0.01885;
+const SAO_PAULO_KWH_PRICE = SAO_PAULO_BASE_KWH_PRICE + YELLOW_FLAG_KWH_SURCHARGE;
 
 const PRINTER_PRESETS = {
   ad5x: {
@@ -37,7 +39,7 @@ const DEFAULTS = {
 };
 
 const STORAGE_KEY = "threeDQuoteCalculatorDefaults";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -168,6 +170,13 @@ function getSavedDefaults() {
       migrated.machineHourly = DEFAULTS.machineHourly;
       migrated.setupMinutes = DEFAULTS.setupMinutes;
       migrated.laborHourly = DEFAULTS.laborHourly;
+
+      if (
+        !saved.kwhPrice ||
+        Math.abs(positive(saved.kwhPrice) - SAO_PAULO_BASE_KWH_PRICE) < 0.00001
+      ) {
+        migrated.kwhPrice = DEFAULTS.kwhPrice;
+      }
     }
 
     return migrated;
