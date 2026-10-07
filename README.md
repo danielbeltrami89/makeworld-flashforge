@@ -2,6 +2,12 @@
 
 Extensão Chrome (Manifest V3) em estágio inicial para adicionar ao MakerWorld uma opção de download direcionada à **FlashForge AD5X** e converter localmente projetos `.3mf` originalmente preparados para o ecossistema Bambu/Orca.
 
+## Calculadora de custo para impressão 3D
+
+Este repositório também inclui uma calculadora estática em `docs/`, pensada para publicação no GitHub Pages. Ela calcula custo unitário e custo total do lote considerando material, tempo de impressão, energia, custo da máquina, mão de obra, perdas e extras. A interface principal fica reduzida a impressora, peso, tempo e botão de cálculo, com configurações avançadas recolhidas.
+
+Para publicar, configure o GitHub Pages em **Settings > Pages** usando a branch principal e a pasta **/docs**. Não há build nem dependências externas.
+
 ## Contexto do projeto
 
 O objetivo é melhorar o fluxo de quem encontra modelos no MakerWorld mas imprime em uma FlashForge AD5X.

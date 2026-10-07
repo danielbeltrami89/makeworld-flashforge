@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Calculadora de Custo para Impressão 3D</title>
+    <meta
+      name="description"
+      content="Calculadora estática de custo para peças impressas em 3D, pronta para GitHub Pages."
+    >
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="calculator-shell">
+      <header class="terminal-header">
+        <div>
+          <p class="eyebrow">3D cost.exe</p>
+          <h1>Custo de peça 3D</h1>
+        </div>
+        <span class="status-led" id="calculationStatus">aguardando</span>
+      </header>
+
+      <form class="calculator-panel" id="quoteForm">
+        <section class="quick-calc" aria-label="Cálculo rápido">
+          <label>
+            Impressora
+            <select id="printerPreset" name="printerPreset">
+              <option value="ad5x">FlashForge AD5X</option>
+              <option value="a1mini">Bambu Lab A1 mini</option>
+            </select>
+            <small id="printerMeta">120 W médios</small>
+          </label>
+
+          <label>
+            Peso
+            <input
+              id="weightGrams"
+              name="weightGrams"
+              type="number"
+              min="0"
+              step="0.1"
+              inputmode="decimal"
+              placeholder="35"
+            >
+            <small>gramas da peça</small>
+          </label>
+
+          <label>
+            Tempo
+            <input
+              id="printTime"
+              name="printTime"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="02:30"
+              maxlength="6"
+            >
+            <small>horas:minutos</small>
+          </label>
+
+          <button class="button-primary" type="button" id="calculateQuote">Calcular</button>
+        </section>
+
+        <section class="result-display" aria-live="polite">
+          <span>Custo unitário</span>
+          <strong id="resultUnit">R$ 0,00</strong>
+          <div class="result-subgrid">
+            <p>
+              <small>Tempo</small>
+              <b id="resultTime">0h 00min</b>
+            </p>
+            <p>
+              <small>Custo do lote</small>
+              <b id="resultTotal">R$ 0,00</b>
+            </p>
+          </div>
+        </section>
+
+        <details class="details-panel">
+          <summary>Configurações</summary>
+
+          <div class="settings-grid">
+            <label>
+              Material
+              <select id="materialPreset" name="materialPreset">
+                <option value="pla">PLA</option>
+                <option value="petg">PETG</option>
+                <option value="abs">ABS</option>
+                <option value="tpu">TPU</option>
+                <option value="resin">Resina</option>
+                <option value="custom">Personalizado</option>
+              </select>
+            </label>
+
+            <label>
+              Material por kg
+              <input id="filamentPrice" name="filamentPrice" type="number" min="0" step="0.01" inputmode="decimal">
+            </label>
+
+            <label>
+              Quantidade
+              <input id="quantity" name="quantity" type="number" min="1" step="1" inputmode="numeric">
+            </label>
+
+            <label>
+              Consumo médio
+              <input id="powerWatts" name="powerWatts" type="number" min="0" step="1" inputmode="decimal">
+            </label>
+
+            <label>
+              Energia SP Capital
+              <input id="kwhPrice" name="kwhPrice" type="number" min="0" step="0.00001" inputmode="decimal">
+            </label>
+
+            <label>
+              Máquina por hora
+              <input id="machineHourly" name="machineHourly" type="number" min="0" step="0.01" inputmode="decimal">
+            </label>
+
+            <label>
+              Perdas e falhas %
+              <input id="wastePercent" name="wastePercent" type="number" min="0" max="95" step="0.1" inputmode="decimal">
+            </label>
+
+            <label>
+              Preparação min.
+              <input id="setupMinutes" name="setupMinutes" type="number" min="0" step="1" inputmode="numeric">
+            </label>
+
+            <label>
+              Sua hora
+              <input id="laborHourly" name="laborHourly" type="number" min="0" step="0.01" inputmode="decimal">
+            </label>
+
+            <label>
+              Extras do lote
+              <input id="fixedExtras" name="fixedExtras" type="number" min="0" step="0.01" inputmode="decimal">
+            </label>
+          </div>
+
+          <dl class="breakdown">
+            <div>
+              <dt>Material</dt>
+              <dd id="lineMaterialValue">R$ 0,00</dd>
+            </div>
+            <div>
+              <dt>Energia</dt>
+              <dd id="lineEnergyValue">R$ 0,00</dd>
+            </div>
+            <div>
+              <dt>Máquina</dt>
+              <dd id="lineMachineValue">R$ 0,00</dd>
+            </div>
+            <div>
+              <dt>Mão de obra</dt>
+              <dd id="lineLaborValue">R$ 0,00</dd>
+            </div>
+            <div>
+              <dt>Extras</dt>
+              <dd id="lineExtrasValue">R$ 0,00</dd>
+            </div>
+          </dl>
+
+          <div class="form-actions">
+            <button type="button" id="copyQuote">Copiar custo</button>
+            <button type="button" id="saveDefaults">Salvar valores</button>
+            <button type="button" id="resetValues">Restaurar padrão</button>
+          </div>
+        </details>
+      </form>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
