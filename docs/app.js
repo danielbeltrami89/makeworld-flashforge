@@ -37,6 +37,7 @@ const DEFAULTS = {
 };
 
 const STORAGE_KEY = "threeDQuoteCalculatorDefaults";
+const STORAGE_VERSION = 2;
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -161,6 +162,12 @@ function getSavedDefaults() {
       migrated.printTime = formatTimeInput(
         positive(saved.printHours) + Math.min(59, positive(saved.printMinutes)) / 60
       );
+    }
+
+    if (saved._version !== STORAGE_VERSION) {
+      migrated.machineHourly = DEFAULTS.machineHourly;
+      migrated.setupMinutes = DEFAULTS.setupMinutes;
+      migrated.laborHourly = DEFAULTS.laborHourly;
     }
 
     return migrated;
@@ -301,7 +308,10 @@ function setupCalculator() {
 
   document.getElementById("saveDefaults").addEventListener("click", () => {
     const result = render();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(collectValues(form)));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...collectValues(form), _version: STORAGE_VERSION })
+    );
     status.textContent = result.baseUnitCost > 0 ? "valores salvos" : "salvo";
   });
 
