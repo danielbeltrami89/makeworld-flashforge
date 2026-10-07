@@ -1,6 +1,7 @@
 (() => {
-  const ID = 'mw-flashforge-ad5x-option';
-  const LABEL = 'Download for FlashForge AD5X';
+  const BUTTON_ID = 'mw-flashforge-ad5x-button';
+  const STYLE_ID = 'mw-flashforge-ad5x-style';
+  const LABEL = 'Baixar AD5X';
   const SEARCH_SELECTOR = [
     'button',
     'a',
@@ -26,19 +27,6 @@
     'ダウンロード',
     '다운로드'
   ];
-  const OPEN_WORDS = [
-    'open',
-    'abrir',
-    'aberto',
-    'ouvrir',
-    'offnen',
-    'öffnen',
-    'apri',
-    '打开',
-    '開く',
-    '열기'
-  ];
-  let injecting = false;
   let scheduled = false;
 
   function norm(s) {
@@ -61,20 +49,11 @@
     return words.some(word => text.includes(norm(word)));
   }
 
-  function matchesActionText(text, kind) {
-    if (!text || text.includes(norm(LABEL))) return false;
-    const hasDownloadWord = includesAny(text, DOWNLOAD_WORDS);
-
-    if (kind === '3mf') {
-      return text.includes('3mf') && (hasDownloadWord || !text.includes('stl'));
-    }
-    if (kind === 'stlCad') {
-      return (text.includes('stl') || text.includes('cad')) && hasDownloadWord;
-    }
-    if (kind === 'bambu') {
-      return text.includes('bambu') && text.includes('studio') && includesAny(text, OPEN_WORDS);
-    }
-    return false;
+  function isDownload3mfText(text) {
+    if (!text) return false;
+    const selfText = norm(`${LABEL} FlashForge AD5X`);
+    if (text.includes(selfText) || text.includes('flashforge')) return false;
+    return text.includes('3mf') && (includesAny(text, DOWNLOAD_WORDS) || !text.includes('stl'));
   }
 
   function clickable(el) {
@@ -91,195 +70,196 @@
     return best || el;
   }
 
-  function scoreCandidate(el, target, text, kind) {
+  function score3mfCandidate(el, target, text) {
     let score = 0;
     if (target.matches('button, a')) score += 50;
-    if (target.matches('[role="menuitem"], [role="option"], [role="button"]')) score += 40;
-    if (target.hasAttribute('tabindex')) score += 10;
-    if (target.closest('[role="menu"], [role="listbox"]')) score += 15;
-
-    const exactText = kind === '3mf'
-      ? ['download 3mf', 'baixar 3mf', 'descarregar 3mf', 'descargar 3mf']
-      : kind === 'stlCad'
-        ? ['download stl/cad files', 'baixar arquivos stl/cad', 'descarregar ficheiros stl/cad']
-        : ['open in bambu studio', 'abrir no bambu studio'];
-    if (exactText.some(item => text === norm(item))) score += 30;
-
-    if (text.length <= 35) score += 20;
+    if (target.matches('[role="menuitem"], [role="option"], [role="button"]')) score += 35;
+    if (target.hasAttribute('tabindex')) score += 8;
+    if (text === 'download 3mf' || text === 'baixar 3mf') score += 40;
+    if (text.length <= 35) score += 25;
     else if (text.length <= 90) score += 8;
-    else score -= Math.min(50, Math.floor(text.length / 20));
+    else score -= Math.min(60, Math.floor(text.length / 15));
 
     const rect = target.getBoundingClientRect();
-    if (rect.height <= 72) score += 10;
+    if (rect.height >= 32 && rect.height <= 80) score += 15;
     else if (rect.height > 140) score -= 30;
-    if (rect.width <= Math.min(window.innerWidth * 0.9, 560)) score += 5;
+    if (rect.width <= Math.min(window.innerWidth * 0.9, 620)) score += 6;
     else score -= 15;
     if (norm(target.textContent) === text) score += 8;
     if (el === target) score += 4;
     return score;
   }
 
-  function findAction(kind, root = document) {
+  function findDownload3mfAction() {
     let best = null;
-    const candidates = root.querySelectorAll(SEARCH_SELECTOR);
+    const candidates = document.querySelectorAll(SEARCH_SELECTOR);
     for (const el of candidates) {
       if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
-      if (el.id === ID || el.closest(`#${ID}`)) continue;
+      if (el.id === BUTTON_ID || el.closest(`#${BUTTON_ID}`)) continue;
 
       const text = norm(el.textContent);
-      if (!matchesActionText(text, kind)) continue;
+      if (!isDownload3mfText(text)) continue;
 
       const target = clickable(el);
       if (!(target instanceof HTMLElement) || !isVisible(target)) continue;
-      if (target.id === ID || target.closest(`#${ID}`)) continue;
+      if (target.id === BUTTON_ID || target.closest(`#${BUTTON_ID}`)) continue;
 
-      const score = scoreCandidate(el, target, text, kind);
+      const score = score3mfCandidate(el, target, text);
       if (!best || score > best.score) best = { target, score };
     }
     return best?.target || null;
   }
 
-  function findNearbyAction(anchor, kind) {
-    for (let cur = anchor?.parentElement; cur && cur !== document.body; cur = cur.parentElement) {
-      const found = findAction(kind, cur);
-      if (found) return found;
-    }
-    return null;
+  function setButtonBusy(button, busy) {
+    button.disabled = busy;
+    button.setAttribute('aria-busy', String(busy));
+    button.querySelector('[data-main]').textContent = busy ? 'Preparando...' : LABEL;
   }
 
-  function isValidInjectedItem(item) {
-    if (!(item instanceof HTMLElement) || !isVisible(item)) return false;
-    const parent = item.parentElement;
-    if (!parent) return false;
-    return Array.from(parent.children).some(child => (
-      child !== item &&
-      child instanceof HTMLElement &&
-      isVisible(child) &&
-      matchesActionText(norm(child.textContent), 'stlCad')
-    ));
-  }
-
-  function hasInjectedItemInOpenMenu() {
-    let valid = false;
-    for (const item of document.querySelectorAll(`#${ID}`)) {
-      if (isValidInjectedItem(item)) valid = true;
-      else item.remove();
-    }
-    return valid;
-  }
-
-  function findInsertionParent(source, required = []) {
-    for (let cur = source?.parentElement; cur && cur !== document.body; cur = cur.parentElement) {
-      if (required.some(el => el && !cur.contains(el))) continue;
-      const visibleChildren = Array.from(cur.children).filter(child => child instanceof HTMLElement && isVisible(child));
-      if (visibleChildren.length >= 2) return cur;
-    }
-    return source?.parentElement || null;
-  }
-
-  function replaceVisibleText(item) {
-    const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
-    const textNodes = [];
-    while (walker.nextNode()) {
-      if (norm(walker.currentNode.nodeValue)) textNodes.push(walker.currentNode);
-    }
-
-    const main = textNodes.find(node => {
-      const text = norm(node.nodeValue);
-      return matchesActionText(text, 'stlCad') || matchesActionText(text, '3mf') || matchesActionText(text, 'bambu');
-    }) || textNodes[0];
-
-    if (!main) {
-      item.textContent = LABEL;
-      return;
-    }
-
-    for (const node of textNodes) {
-      node.nodeValue = node === main ? LABEL : '';
-    }
-  }
-
-  async function startConversion(preferredOriginal) {
-    const existing = document.getElementById(ID);
-    const original = (
-      preferredOriginal instanceof HTMLElement &&
-      document.contains(preferredOriginal) &&
-      isVisible(preferredOriginal)
-    )
-      ? preferredOriginal
-      : findNearbyAction(existing, '3mf') || findAction('3mf');
+  async function startConversion(button) {
+    const original = findDownload3mfAction();
     if (!original) {
-      alert('Não encontrei a opção “Download 3MF”. Feche e abra o menu de download novamente.');
+      alert('Não encontrei o botão “Baixar 3MF” nesta página. Abra um modelo/perfil de impressão e tente novamente.');
       return;
     }
 
-    const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD' });
-    if (!response?.ok) {
-      alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
-      return;
-    }
-
-    original.click();
-  }
-
-  function inject() {
-    if (injecting || hasInjectedItemInOpenMenu()) return;
-    injecting = true;
+    setButtonBusy(button, true);
     try {
-      const stl = findAction('stlCad');
-      if (!stl) return;
-
-      const original3mf = findNearbyAction(stl, '3mf') || findAction('3mf');
-      if (!original3mf) return;
-
-      const parent = findInsertionParent(stl);
-      if (!parent) return;
-
-      const item = stl.cloneNode(true);
-      item.id = ID;
-      item.removeAttribute('href');
-      item.removeAttribute('download');
-      item.removeAttribute('disabled');
-      item.removeAttribute('aria-disabled');
-      item.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
-      item.setAttribute('role', stl.getAttribute('role') || 'menuitem');
-      if (item.tabIndex < 0) item.tabIndex = 0;
-
-      replaceVisibleText(item);
-
-      item.style.borderTop = item.style.borderTop || '1px solid rgba(255,255,255,.08)';
-      item.style.fontWeight = '600';
-      item.style.color = '#32d74b';
-      item.title = 'Baixa o 3MF e converte localmente para um projeto da FlashForge AD5X';
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        startConversion(original3mf);
-      }, true);
-
-      if (stl.parentElement === parent) stl.insertAdjacentElement('afterend', item);
-      else parent.appendChild(item);
-    } finally {
-      injecting = false;
+      const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD' });
+      if (!response?.ok) {
+        alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
+        return;
+      }
+      original.click();
+      setTimeout(() => setButtonBusy(button, false), 2500);
+    } catch (error) {
+      setButtonBusy(button, false);
+      alert('Falha ao iniciar a conversão: ' + (error?.message || error));
     }
   }
 
-  function scheduleInject() {
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      #${BUTTON_ID} {
+        position: fixed;
+        right: 24px;
+        bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+        z-index: 2147483646;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 172px;
+        height: 48px;
+        padding: 0 18px;
+        border: 1px solid rgba(255, 255, 255, .18);
+        border-radius: 999px;
+        background: linear-gradient(135deg, #02c91f, #008f6a);
+        color: #07120a;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, .38), 0 0 0 1px rgba(0, 0, 0, .18);
+        cursor: pointer;
+        font: 700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        user-select: none;
+      }
+      #${BUTTON_ID}:hover {
+        filter: brightness(1.06);
+        transform: translateY(-1px);
+      }
+      #${BUTTON_ID}:active {
+        transform: translateY(0);
+      }
+      #${BUTTON_ID}:disabled {
+        cursor: wait;
+        filter: saturate(.8);
+        opacity: .82;
+      }
+      #${BUTTON_ID} [data-icon] {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .24);
+        color: #06250d;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+      }
+      #${BUTTON_ID} [data-text] {
+        display: grid;
+        gap: 1px;
+        text-align: left;
+        white-space: nowrap;
+      }
+      #${BUTTON_ID} [data-sub] {
+        font-size: 10px;
+        font-weight: 700;
+        opacity: .74;
+      }
+      @media (max-width: 640px) {
+        #${BUTTON_ID} {
+          right: 16px;
+          bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+          min-width: 150px;
+          height: 44px;
+          padding: 0 14px;
+        }
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function ensureFloatingButton() {
+    if (!document.body || document.getElementById(BUTTON_ID)) return;
+    ensureStyles();
+
+    const button = document.createElement('button');
+    button.id = BUTTON_ID;
+    button.type = 'button';
+    button.title = 'Baixa o 3MF e converte localmente para um projeto da FlashForge AD5X';
+    button.innerHTML = `
+      <span data-icon aria-hidden="true">3MF</span>
+      <span data-text>
+        <span data-main>${LABEL}</span>
+        <span data-sub>FlashForge</span>
+      </span>
+    `;
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startConversion(button);
+    }, true);
+
+    document.body.appendChild(button);
+  }
+
+  function scheduleButton() {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      inject();
+      ensureFloatingButton();
     });
   }
 
-  const observer = new MutationObserver(scheduleInject);
+  const observer = new MutationObserver(scheduleButton);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  inject();
+  ensureFloatingButton();
 })();
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type !== 'FLASHFORGE_STATUS') return;
+  const button = document.getElementById('mw-flashforge-ad5x-button');
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = false;
+    button.setAttribute('aria-busy', 'false');
+    const main = button.querySelector('[data-main]');
+    if (main) main.textContent = 'Baixar AD5X';
+  }
+
   let el = document.getElementById('mw-flashforge-toast');
   if (!el) {
     el = document.createElement('div');
