@@ -59,7 +59,7 @@
       el = document.createElement('div');
       el.id = 'mw-flashforge-toast';
       Object.assign(el.style, {
-        position: 'fixed', right: '24px', bottom: '24px', zIndex: '2147483647',
+        position: 'fixed', right: '24px', bottom: 'calc(214px + env(safe-area-inset-bottom, 0px))', zIndex: '2147483647',
         background: '#202020', color: '#fff', border: '1px solid #3a3a3a', borderRadius: '10px',
         padding: '12px 16px', font: '14px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
         boxShadow: '0 8px 30px rgba(0,0,0,.35)', maxWidth: '380px'
@@ -183,9 +183,11 @@
     style.id = STYLE_ID;
     style.textContent = `
       #${BUTTON_ID} {
+        --mw-flashforge-right: 24px;
+        --mw-flashforge-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
         position: fixed;
-        right: 24px;
-        bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+        right: var(--mw-flashforge-right);
+        bottom: var(--mw-flashforge-bottom);
         z-index: 2147483646;
         display: inline-flex;
         align-items: center;
@@ -240,8 +242,8 @@
       }
       @media (max-width: 640px) {
         #${BUTTON_ID} {
-          right: 16px;
-          bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+          --mw-flashforge-right: 16px;
+          --mw-flashforge-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
           min-width: 150px;
           height: 44px;
           padding: 0 14px;
@@ -319,7 +321,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     el = document.createElement('div');
     el.id = 'mw-flashforge-toast';
     Object.assign(el.style, {
-      position: 'fixed', right: '24px', bottom: '24px', zIndex: '2147483647',
+      position: 'fixed', right: '24px', bottom: 'calc(214px + env(safe-area-inset-bottom, 0px))', zIndex: '2147483647',
       background: '#202020', color: '#fff', border: '1px solid #3a3a3a', borderRadius: '10px',
       padding: '12px 16px', font: '14px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
       boxShadow: '0 8px 30px rgba(0,0,0,.35)', maxWidth: '380px'
