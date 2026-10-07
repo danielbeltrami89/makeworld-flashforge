@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MakerWorld → FlashForge AD5X",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Adiciona 'Download for FlashForge AD5X' ao MakerWorld e converte projetos 3MF localmente.",
   "permissions": ["downloads", "offscreen", "storage"],
   "host_permissions": [

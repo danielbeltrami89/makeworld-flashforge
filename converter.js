@@ -27,6 +27,14 @@
     prime_tower: 'wipe_tower',
     prime_tower_width: 'wipe_tower_width'
   };
+  const VALUE_REPLACE = {
+    ensure_vertical_shell_thickness: {
+      enabled: 'ensure_all'
+    },
+    support_style: {
+      tree_organic: 'default'
+    }
+  };
   const TEMP_KEYS = /(?:nozzle|filament|temperature|temp)(?!.*bed)/i;
 
   function sameShape(old, value) {
@@ -50,6 +58,19 @@
     return Array.isArray(v) ? v.map(cap) : cap(v);
   }
 
+  function replaceUnsupportedValue(k, v, report) {
+    const replacements = VALUE_REPLACE[k];
+    if (!replacements) return v;
+    const replaceOne = x => {
+      const key = String(x);
+      if (!(key in replacements)) return x;
+      const next = replacements[key];
+      report.valueReplaced.push(`${k}: ${key} → ${next}`);
+      return typeof x === 'string' ? next : sameShape(x, next);
+    };
+    return Array.isArray(v) ? v.map(replaceOne) : replaceOne(v);
+  }
+
   function convertJson(obj, report) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
     const out = {};
@@ -63,6 +84,7 @@
         if (value !== TARGET.slicerVersion) report.versionPatched.push(`${key2}: ${value} → ${TARGET.slicerVersion}`);
         value = TARGET.slicerVersion;
       }
+      value = replaceUnsupportedValue(key2, value, report);
       value = capTemps(key2, value, report);
       out[key2] = value;
     }
@@ -129,7 +151,7 @@
 
   async function convert3mf(bytes) {
     const entries = await MiniZip.read(bytes);
-    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
+    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], valueReplaced: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
     let foundProject = false;
 
     const out = entries.flatMap(ent => {
@@ -161,7 +183,7 @@
     // Add a small, harmless conversion note for diagnostics.
     out.push({
       name: 'Metadata/flashforge_conversion.json',
-      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: '0.2.5', target: TARGET }, null, 2))
+      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: '0.2.6', target: TARGET }, null, 2))
     });
 
     return { bytes: await MiniZip.write(out), report };
