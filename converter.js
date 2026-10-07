@@ -2,6 +2,8 @@
   const TARGET = {
     printerModel: 'Flashforge AD5X',
     printerPreset: 'Flashforge AD5X 0.4 nozzle',
+    slicerApp: 'BambuStudio-02.04.00.02',
+    slicerVersion: '02.04.00.02',
     nozzle: '0.4',
     maxTemp: 300,
     bedX: 220,
@@ -17,7 +19,8 @@
     'machine_max_jerk_y','machine_max_jerk_z','machine_max_speed_e','machine_max_speed_x','machine_max_speed_y',
     'machine_max_speed_z','machine_min_extruding_rate','machine_min_travel_rate','print_host','print_host_webui',
     'printhost_apikey','printhost_user','printhost_password','flashforge_serial_number','printer_agent',
-    'bed_custom_model','bed_custom_texture','bed_exclude_area','extruder_offset','printable_area'
+    'bed_custom_model','bed_custom_texture','bed_exclude_area','extruder_offset','printable_area',
+    'print_compatible_printers','upward_compatible_machine'
   ]);
   const DROP_PREFIX = ['machine_', 'bbl_', 'ams_', 'scan_first_layer', 'timelapse_type'];
   const RENAME = {
@@ -56,6 +59,10 @@
       if (key2 !== key) report.renamed.push(`${key} → ${key2}`);
       let value = raw;
       if (value && typeof value === 'object' && !Array.isArray(value)) value = convertJson(value, report);
+      if (key2 === 'version' && typeof value === 'string' && /^\d+(?:\.\d+)+$/.test(value)) {
+        if (value !== TARGET.slicerVersion) report.versionPatched.push(`${key2}: ${value} → ${TARGET.slicerVersion}`);
+        value = TARGET.slicerVersion;
+      }
       value = capTemps(key2, value, report);
       out[key2] = value;
     }
@@ -85,7 +92,8 @@
     let s = text;
     const replacements = [
       [/(key|name)=(['"])printer_model\2\s+value=(['"])[^'"]*\3/gi, `$1=$2printer_model$2 value=$3${TARGET.printerModel}$3`],
-      [/(key|name)=(['"])printer_settings_id\2\s+value=(['"])[^'"]*\3/gi, `$1=$2printer_settings_id$2 value=$3${TARGET.printerPreset}$3`]
+      [/(key|name)=(['"])printer_settings_id\2\s+value=(['"])[^'"]*\3/gi, `$1=$2printer_settings_id$2 value=$3${TARGET.printerPreset}$3`],
+      [/(key=(['"])X-BBL-Client-Version\2\s+value=(['"]))[^'"]*(\3)/gi, `$1${TARGET.slicerVersion}$4`]
     ];
     for (const [re, rep] of replacements) {
       const before=s; s=s.replace(re,rep); if(s!==before) report.xmlPatched++;
@@ -93,29 +101,59 @@
     return s;
   }
 
+  function concatBytes(parts) {
+    const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+    let offset = 0;
+    for (const part of parts) {
+      out.set(part, offset);
+      offset += part.length;
+    }
+    return out;
+  }
+
+  function patchModelHeader(data, report) {
+    const prefixSize = Math.min(data.length, 128 * 1024);
+    const prefix = MiniZip.text(data.slice(0, prefixSize));
+    const patched = prefix.replace(
+      /(<metadata\s+name=(['"])Application\2\s*>)([^<]*)(<\/metadata>)/i,
+      (_match, open, _quote, oldValue, close) => {
+        if (oldValue !== TARGET.slicerApp) {
+          report.versionPatched.push(`Application: ${oldValue} → ${TARGET.slicerApp}`);
+        }
+        return `${open}${TARGET.slicerApp}${close}`;
+      }
+    );
+    if (patched === prefix) return data;
+    return concatBytes([MiniZip.bytes(patched), data.slice(prefixSize)]);
+  }
+
   async function convert3mf(bytes) {
     const entries = await MiniZip.read(bytes);
-    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], capped: [], xmlPatched: 0, rebuiltDifferentSettings: false };
+    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
     let foundProject = false;
 
-    const out = entries.map(ent => {
+    const out = entries.flatMap(ent => {
       const name = ent.name.toLowerCase();
+      if (name === 'metadata/flashforge_conversion.json') return [];
+      if (name === '3d/3dmodel.model') {
+        return [{ ...ent, data: patchModelHeader(ent.data, report) }];
+      }
       if (name.endsWith('metadata/project_settings.config') || name.endsWith('/project_settings.config')) {
         foundProject = true;
         try {
           const original = JSON.parse(MiniZip.text(ent.data));
           const converted = convertJson(original, report);
           report.jsonFiles.push(ent.name);
-          return { ...ent, data: MiniZip.bytes(JSON.stringify(converted, null, 4)) };
+          return [{ ...ent, data: MiniZip.bytes(JSON.stringify(converted, null, 4)) }];
         } catch (e) {
           throw new Error(`Não consegui interpretar ${ent.name} como JSON: ${e.message}`);
         }
       }
       if (name.endsWith('.config') || name.endsWith('.xml')) {
         const text = MiniZip.text(ent.data);
-        if (text.trim().startsWith('<')) return { ...ent, data: MiniZip.bytes(patchXmlText(text, report)) };
+        if (text.trim().startsWith('<')) return [{ ...ent, data: MiniZip.bytes(patchXmlText(text, report)) }];
       }
-      return ent;
+      return [ent];
     });
 
     if (!foundProject) throw new Error('Este 3MF não contém Metadata/project_settings.config. Baixe o Print Profile do MakerWorld, não apenas o modelo.');
@@ -123,7 +161,7 @@
     // Add a small, harmless conversion note for diagnostics.
     out.push({
       name: 'Metadata/flashforge_conversion.json',
-      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: '0.1.0', target: TARGET }, null, 2))
+      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: '0.2.5', target: TARGET }, null, 2))
     });
 
     return { bytes: await MiniZip.write(out), report };
