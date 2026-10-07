@@ -29,6 +29,7 @@
   const OPEN_WORDS = [
     'open',
     'abrir',
+    'aberto',
     'ouvrir',
     'offnen',
     'öffnen',
@@ -138,7 +139,7 @@
     return best?.target || null;
   }
 
-  function findInsertionParent(source, required) {
+  function findInsertionParent(source, required = []) {
     for (let cur = source?.parentElement; cur && cur !== document.body; cur = cur.parentElement) {
       if (required.some(el => el && !cur.contains(el))) continue;
       const visibleChildren = Array.from(cur.children).filter(child => child instanceof HTMLElement && isVisible(child));
@@ -195,7 +196,7 @@
       const source = stl || bambu || original3mf;
       if (!source || !original3mf) return;
 
-      const parent = findInsertionParent(source, [original3mf, source]);
+      const parent = findInsertionParent(source);
       if (!parent) return;
 
       const item = source.cloneNode(true);
@@ -220,7 +221,8 @@
         startConversion();
       }, true);
 
-      parent.appendChild(item);
+      if (source.parentElement === parent) source.insertAdjacentElement('afterend', item);
+      else parent.appendChild(item);
     } finally {
       injecting = false;
     }
