@@ -156,15 +156,21 @@
     setButtonBusy(button, true);
     try {
       showStatus('Acionando o download original do MakerWorld...');
-      const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD' });
-      log('background arm response', response);
-      if (!response?.ok) {
-        setButtonBusy(button, false);
-        alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
-        return;
-      }
+      const clickedAt = new Date(Date.now() - 1000).toISOString();
+      const armPromise = chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD', clickedAt });
       original.click();
       showStatus('Clique enviado. Aguardando o Chrome detectar o download...');
+      armPromise.then((response) => {
+        log('background arm response', response);
+        if (!response?.ok) {
+          setButtonBusy(button, false);
+          alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
+        }
+      }).catch((error) => {
+        log('background arm failed', error);
+        setButtonBusy(button, false);
+        alert('Falha ao iniciar a conversão: ' + (error?.message || error));
+      });
       clearTimeout(button._resetTimer);
       button._resetTimer = setTimeout(() => {
         setButtonBusy(button, false);

@@ -2,6 +2,7 @@ let armedUntil = 0;
 let sourceTabId = null;
 let armTimeout = null;
 let handlingDownloadId = null;
+let armStartedAt = null;
 
 const ARM_WINDOW_MS = 20000;
 const OFFSCREEN_PATH = 'offscreen.html';
@@ -11,8 +12,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     resetArm();
     armedUntil = Date.now() + ARM_WINDOW_MS;
     sourceTabId = sender.tab?.id ?? null;
+    armStartedAt = msg.clickedAt || new Date(Date.now() - 1000).toISOString();
 
     notify(sourceTabId, 'Aguardando o download 3MF do MakerWorld...');
+    scanRecentDownloads();
     armTimeout = setTimeout(() => {
       if (Date.now() <= armedUntil && handlingDownloadId == null) {
         const tabId = sourceTabId;
@@ -29,6 +32,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 function resetArm() {
   armedUntil = 0;
   sourceTabId = null;
+  armStartedAt = null;
   if (armTimeout) clearTimeout(armTimeout);
   armTimeout = null;
 }
@@ -69,6 +73,27 @@ async function waitForDownloadMetadata(id) {
     if (is3mf(latest) || latest.filename || latest.finalUrl) break;
   }
   return latest;
+}
+
+async function scanRecentDownloads() {
+  const startedAfter = armStartedAt;
+  if (!startedAfter || handlingDownloadId != null) return;
+  try {
+    const items = await chrome.downloads.search({
+      startedAfter,
+      orderBy: ['-startTime'],
+      limit: 10
+    });
+    for (const item of items || []) {
+      if (Date.now() > armedUntil || handlingDownloadId != null) return;
+      const latest = await waitForDownloadMetadata(item.id);
+      if (!latest || !looksRelevant(latest)) continue;
+      await processDownload(latest);
+      return;
+    }
+  } catch (error) {
+    console.warn('[FlashForge] recent download scan failed', error);
+  }
 }
 
 function convertedFilename(item) {
@@ -149,6 +174,7 @@ chrome.downloads.onCreated.addListener(async (item) => {
 
   try {
     const latest = await waitForDownloadMetadata(item.id);
+    if (handlingDownloadId != null) return;
     if (!latest || !looksRelevant(latest)) return;
     await processDownload(latest);
   } catch (error) {
