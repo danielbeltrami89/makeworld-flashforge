@@ -2,13 +2,18 @@
   const TARGET = {
     printerModel: 'Flashforge AD5X',
     printerPreset: 'Flashforge AD5X 0.4 nozzle',
+    processPreset: '0.20mm Standard @FF AD5X',
     slicerApp: 'BambuStudio-02.04.00.02',
     slicerVersion: '02.04.00.02',
     nozzle: '0.4',
     maxTemp: 300,
     bedX: 220,
-    bedY: 220
+    bedY: 220,
+    defaultFilamentPreset: 'Flashforge PLA Basic @FF AD5X',
+    defaultFilamentVendor: 'Flashforge'
   };
+
+  const CONVERSION_VERSION = '0.2.7';
 
   // Machine-specific values must come from the installed FlashForge/Orca profile, not the Bambu project.
   const DROP_EXACT = new Set([
@@ -20,7 +25,8 @@
     'machine_max_speed_z','machine_min_extruding_rate','machine_min_travel_rate','print_host','print_host_webui',
     'printhost_apikey','printhost_user','printhost_password','flashforge_serial_number','printer_agent',
     'bed_custom_model','bed_custom_texture','bed_exclude_area','extruder_offset','printable_area',
-    'print_compatible_printers','upward_compatible_machine'
+    'print_compatible_printers','upward_compatible_machine',
+    'filament_start_gcode','filament_end_gcode'
   ]);
   const DROP_PREFIX = ['machine_', 'bbl_', 'ams_', 'scan_first_layer', 'timelapse_type'];
   const RENAME = {
@@ -34,6 +40,17 @@
     support_style: {
       tree_organic: 'default'
     }
+  };
+  const FILAMENT_PRESET_BY_TYPE = {
+    ABS: 'Flashforge ABS Basic @FF AD5X',
+    ASA: 'Flashforge ASA Basic @FF AD5X',
+    HIPS: 'Flashforge Generic HIPS',
+    PETG: 'Flashforge HS PETG @FF AD5X',
+    'PETG-CF': 'Flashforge PETG-CF @FF AD5X',
+    PLA: 'Flashforge PLA Basic @FF AD5X',
+    'PLA-CF': 'Flashforge PLA-CF @FF AD5X',
+    PVA: 'Flashforge Generic PVA',
+    TPU: 'Flashforge TPU 95A @FF AD5X'
   };
   const TEMP_KEYS = /(?:nozzle|filament|temperature|temp)(?!.*bed)/i;
 
@@ -71,6 +88,67 @@
     return Array.isArray(v) ? v.map(replaceOne) : replaceOne(v);
   }
 
+  function normalizeFilamentType(type, currentPreset) {
+    const text = `${type || ''} ${currentPreset || ''}`.toUpperCase();
+    const compact = text.replace(/[\s_]+/g, '-');
+    if (compact.includes('PETG-CF')) return 'PETG-CF';
+    if (compact.includes('PLA-CF')) return 'PLA-CF';
+    for (const candidate of ['PETG', 'ABS', 'ASA', 'HIPS', 'PVA', 'TPU', 'PLA']) {
+      if (new RegExp(`(^|[^A-Z0-9])${candidate}([^A-Z0-9]|$)`).test(text)) return candidate;
+    }
+    return 'PLA';
+  }
+
+  function filamentPresetFor(type, currentPreset) {
+    return FILAMENT_PRESET_BY_TYPE[normalizeFilamentType(type, currentPreset)] || TARGET.defaultFilamentPreset;
+  }
+
+  function filamentVendorFor(preset) {
+    return preset.startsWith('Flashforge ') ? 'Flashforge' : TARGET.defaultFilamentVendor;
+  }
+
+  function reportFilamentPatch(key, before, after, report) {
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    const fmt = value => Array.isArray(value) ? value.join(', ') : String(value);
+    report.filamentPatched.push(`${key}: ${fmt(before)} → ${fmt(after)}`);
+  }
+
+  function patchFilamentPresets(out, report) {
+    const existingIds = Array.isArray(out.filament_settings_id)
+      ? out.filament_settings_id
+      : ('filament_settings_id' in out ? [out.filament_settings_id] : []);
+    const types = Array.isArray(out.filament_type)
+      ? out.filament_type
+      : ('filament_type' in out ? [out.filament_type] : []);
+    const slotCount = Math.max(existingIds.length, types.length);
+    if (slotCount === 0) return;
+
+    const presets = Array.from({ length: slotCount }, (_unused, index) => filamentPresetFor(
+      types[index] || types[0],
+      existingIds[index] || existingIds[0]
+    ));
+
+    if ('filament_settings_id' in out) {
+      const before = out.filament_settings_id;
+      out.filament_settings_id = Array.isArray(before) ? presets : presets[0];
+      reportFilamentPatch('filament_settings_id', before, out.filament_settings_id, report);
+    }
+
+    if ('default_filament_profile' in out) {
+      const before = out.default_filament_profile;
+      const next = filamentPresetFor(types[0], Array.isArray(before) ? before[0] : before);
+      out.default_filament_profile = sameShape(before, next);
+      reportFilamentPatch('default_filament_profile', before, out.default_filament_profile, report);
+    }
+
+    if ('filament_vendor' in out) {
+      const before = out.filament_vendor;
+      const vendors = presets.map(filamentVendorFor);
+      out.filament_vendor = Array.isArray(before) ? before.map((_old, index) => vendors[index] || vendors[0]) : vendors[0];
+      reportFilamentPatch('filament_vendor', before, out.filament_vendor, report);
+    }
+  }
+
   function convertJson(obj, report) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
     const out = {};
@@ -92,10 +170,13 @@
     const set = (k,v) => { out[k] = sameShape(out[k], v); report.replaced.push(k); };
     set('printer_model', TARGET.printerModel);
     set('printer_settings_id', TARGET.printerPreset);
+    set('default_print_profile', TARGET.processPreset);
+    set('print_settings_id', TARGET.processPreset);
     set('nozzle_diameter', TARGET.nozzle);
     if ('printer_variant' in out) set('printer_variant', TARGET.nozzle);
     if ('host_type' in out) delete out.host_type;
     if ('gcode_flavor' in out) delete out.gcode_flavor; // Let AD5X profile supply Klipper flavor.
+    patchFilamentPresets(out, report);
 
     // Keep process/filament overrides active. Slot 0 is process overrides in Bambu/Orca projects.
     const keys = Object.keys(out).filter(k => !['different_settings_to_system'].includes(k));
@@ -151,7 +232,7 @@
 
   async function convert3mf(bytes) {
     const entries = await MiniZip.read(bytes);
-    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], valueReplaced: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
+    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], valueReplaced: [], filamentPatched: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
     let foundProject = false;
 
     const out = entries.flatMap(ent => {
@@ -183,7 +264,7 @@
     // Add a small, harmless conversion note for diagnostics.
     out.push({
       name: 'Metadata/flashforge_conversion.json',
-      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: '0.2.6', target: TARGET }, null, 2))
+      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: CONVERSION_VERSION, target: TARGET }, null, 2))
     });
 
     return { bytes: await MiniZip.write(out), report };
