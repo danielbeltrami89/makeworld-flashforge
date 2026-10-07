@@ -3,6 +3,7 @@ let sourceTabId = null;
 let armTimeout = null;
 let handlingDownloadId = null;
 let armStartedAt = null;
+let requestedFilenameBase = null;
 
 const ARM_WINDOW_MS = 20000;
 const OFFSCREEN_PATH = 'offscreen.html';
@@ -13,6 +14,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     armedUntil = Date.now() + ARM_WINDOW_MS;
     sourceTabId = sender.tab?.id ?? null;
     armStartedAt = msg.clickedAt || new Date(Date.now() - 1000).toISOString();
+    requestedFilenameBase = sanitizeFilenameBase(msg.itemName);
 
     notify(sourceTabId, 'Conversao armada. Clique no botao verde "Baixar 3MF" do MakerWorld.');
     scanRecentDownloads();
@@ -33,6 +35,7 @@ function resetArm() {
   armedUntil = 0;
   sourceTabId = null;
   armStartedAt = null;
+  requestedFilenameBase = null;
   if (armTimeout) clearTimeout(armTimeout);
   armTimeout = null;
 }
@@ -96,9 +99,20 @@ async function scanRecentDownloads() {
   }
 }
 
-function convertedFilename(item) {
+function sanitizeFilenameBase(value) {
+  const clean = String(value || '')
+    .normalize('NFKC')
+    .replace(/\.[^.]+$/i, '')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[-. ]+$/g, '')
+    .trim();
+  return clean.slice(0, 160) || null;
+}
+
+function convertedFilename(item, preferredBase) {
   const raw = ((item.filename || '').split(/[\\/]/).pop() || 'makerworld.3mf');
-  const name = raw.replace(/\.[^.]+$/i, '') || 'makerworld';
+  const name = sanitizeFilenameBase(preferredBase) || sanitizeFilenameBase(raw) || 'makerworld';
   return `${name}_AD5X.3mf`;
 }
 
@@ -129,6 +143,7 @@ async function notify(tabId, message) {
 async function processDownload(item) {
   handlingDownloadId = item.id;
   const tabId = sourceTabId;
+  const filenameBase = requestedFilenameBase;
   resetArm();
 
   try {
@@ -143,7 +158,7 @@ async function processDownload(item) {
     try { await chrome.downloads.erase({ id: item.id }); } catch (_) {}
     await ensureOffscreen();
 
-    const filename = convertedFilename(item);
+    const filename = convertedFilename(item, filenameBase);
     const result = await chrome.runtime.sendMessage({
       type: 'CONVERT_IN_OFFSCREEN',
       url: sourceUrl

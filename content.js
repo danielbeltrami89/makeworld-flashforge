@@ -54,6 +54,53 @@
     console.info('[FlashForge AD5X]', ...args);
   }
 
+  function cleanItemName(value) {
+    return (value || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*(?:\||-|–|—)\s*(?:MakerWorld|Bambu Lab).*$/i, '')
+      .replace(/\s*(?:\||-|–|—)\s*(?:Modelo 3D|3D Model).*$/i, '')
+      .trim();
+  }
+
+  function titleCaseSlug(value) {
+    return value.replace(/\p{L}[\p{L}\p{N}]*/gu, word => {
+      if (word.length <= 2 && word === word.toUpperCase()) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
+  }
+
+  function itemNameFromUrl() {
+    const match = location.pathname.match(/\/models\/([^/?#]+)/i);
+    if (!match) return '';
+    const decoded = decodeURIComponent(match[1]);
+    const withoutId = decoded.replace(/^\d+[-_]?/, '');
+    return cleanItemName(titleCaseSlug(withoutId.replace(/[-_]+/g, ' ')));
+  }
+
+  function resemblesSlug(candidate, slugName) {
+    if (!candidate || !slugName) return false;
+    const candidateNorm = norm(candidate);
+    const tokens = norm(slugName).split(' ').filter(token => token.length > 2 || /^\d+$/.test(token));
+    if (!tokens.length) return false;
+    const matches = tokens.filter(token => candidateNorm.includes(token)).length;
+    return matches >= Math.min(tokens.length, 3);
+  }
+
+  function extractItemName() {
+    const slugName = itemNameFromUrl();
+    const candidates = [
+      document.querySelector('meta[property="og:title"]')?.content,
+      document.querySelector('meta[name="twitter:title"]')?.content,
+      ...Array.from(document.querySelectorAll('h1')).filter(isVisible).map(el => el.textContent),
+      document.title
+    ].map(cleanItemName).filter(Boolean);
+
+    if (slugName) {
+      return candidates.find(candidate => resemblesSlug(candidate, slugName)) || slugName;
+    }
+    return candidates[0] || '';
+  }
+
   function showStatus(message) {
     let el = document.getElementById('mw-flashforge-toast');
     if (!el) {
@@ -176,7 +223,9 @@
     try {
       showStatus('Armando a conversao...');
       const clickedAt = new Date(Date.now() - 1000).toISOString();
-      const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD', clickedAt });
+      const itemName = extractItemName();
+      log('item name detected', itemName);
+      const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD', clickedAt, itemName });
       log('background arm response', response);
       if (!response?.ok) {
         resetButton(button);
