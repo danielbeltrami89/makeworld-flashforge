@@ -8,6 +8,7 @@ Valores iniciais:
 
 - Impressoras: FlashForge AD5X e Bambu Lab A1 mini.
 - Energia: tarifa residencial convencional Enel SP B1 de `0,78938 R$/kWh`, editável nas configurações.
+- Máquina e mão de obra: em branco por padrão, portanto não entram no cálculo até serem preenchidas.
 - Tempo: campo único no formato `HH:MM`.
 
 ## Publicação no GitHub Pages

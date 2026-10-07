@@ -4,12 +4,10 @@ const PRINTER_PRESETS = {
   ad5x: {
     label: "FlashForge AD5X",
     powerWatts: 120,
-    machineHourly: 3.5,
   },
   a1mini: {
     label: "Bambu Lab A1 mini",
     powerWatts: 90,
-    machineHourly: 2.5,
   },
 };
 
@@ -31,10 +29,10 @@ const DEFAULTS = {
   quantity: 1,
   powerWatts: PRINTER_PRESETS.ad5x.powerWatts,
   kwhPrice: SAO_PAULO_KWH_PRICE,
-  machineHourly: PRINTER_PRESETS.ad5x.machineHourly,
+  machineHourly: "",
   wastePercent: 8,
-  setupMinutes: 20,
-  laborHourly: 45,
+  setupMinutes: "",
+  laborHourly: "",
   fixedExtras: 0,
 };
 
@@ -210,7 +208,6 @@ function applyPrinterPreset() {
   }
 
   form.elements.powerWatts.value = preset.powerWatts;
-  form.elements.machineHourly.value = preset.machineHourly;
   updatePrinterMeta();
 }
 
