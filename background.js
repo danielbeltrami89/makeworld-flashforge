@@ -14,13 +14,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sourceTabId = sender.tab?.id ?? null;
     armStartedAt = msg.clickedAt || new Date(Date.now() - 1000).toISOString();
 
-    notify(sourceTabId, 'Aguardando o download 3MF do MakerWorld...');
+    notify(sourceTabId, 'Conversao armada. Clique no botao verde "Baixar 3MF" do MakerWorld.');
     scanRecentDownloads();
     armTimeout = setTimeout(() => {
       if (Date.now() <= armedUntil && handlingDownloadId == null) {
         const tabId = sourceTabId;
         resetArm();
-        notify(tabId, 'Nao detectei nenhum download 3MF. Clique no botao verde "Baixar 3MF" manualmente para confirmar se o MakerWorld inicia o download.');
+        notify(tabId, 'Nao detectei nenhum download 3MF. Clique em "Baixar AD5X" e depois no botao verde "Baixar 3MF".');
       }
     }, ARM_WINDOW_MS + 500);
 

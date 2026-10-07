@@ -1,6 +1,7 @@
 (() => {
   const BUTTON_ID = 'mw-flashforge-ad5x-button';
   const STYLE_ID = 'mw-flashforge-ad5x-style';
+  const HIGHLIGHT_CLASS = 'mw-flashforge-ad5x-target';
   const LABEL = 'Baixar AD5X';
   const SEARCH_SELECTOR = [
     'button',
@@ -138,6 +139,24 @@
     button.querySelector('[data-main]').textContent = busy ? 'Preparando...' : LABEL;
   }
 
+  function resetButton(button) {
+    button.disabled = false;
+    button.setAttribute('aria-busy', 'false');
+    clearTimeout(button._resetTimer);
+    const main = button.querySelector('[data-main]');
+    if (main) main.textContent = LABEL;
+    document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach(el => el.classList.remove(HIGHLIGHT_CLASS));
+  }
+
+  function highlightDownloadTarget(target, button) {
+    document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach(el => el.classList.remove(HIGHLIGHT_CLASS));
+    target.classList.add(HIGHLIGHT_CLASS);
+    clearTimeout(button._highlightTimer);
+    button._highlightTimer = setTimeout(() => {
+      target.classList.remove(HIGHLIGHT_CLASS);
+    }, 22000);
+  }
+
   async function startConversion(button) {
     log('floating button clicked');
     showStatus('Procurando o botao "Baixar 3MF"...');
@@ -155,30 +174,27 @@
     });
     setButtonBusy(button, true);
     try {
-      showStatus('Acionando o download original do MakerWorld...');
+      showStatus('Armando a conversao...');
       const clickedAt = new Date(Date.now() - 1000).toISOString();
-      const armPromise = chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD', clickedAt });
-      original.click();
-      showStatus('Clique enviado. Aguardando o Chrome detectar o download...');
-      armPromise.then((response) => {
-        log('background arm response', response);
-        if (!response?.ok) {
-          setButtonBusy(button, false);
-          alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
-        }
-      }).catch((error) => {
-        log('background arm failed', error);
-        setButtonBusy(button, false);
-        alert('Falha ao iniciar a conversão: ' + (error?.message || error));
-      });
+      const response = await chrome.runtime.sendMessage({ type: 'ARM_FLASHFORGE_DOWNLOAD', clickedAt });
+      log('background arm response', response);
+      if (!response?.ok) {
+        resetButton(button);
+        alert('Não foi possível iniciar a conversão. Recarregue a página e tente novamente.');
+        return;
+      }
+
+      highlightDownloadTarget(original, button);
+      button.querySelector('[data-main]').textContent = 'Clique 3MF';
+      showStatus('Conversao armada. Agora clique no botao verde "Baixar 3MF" do MakerWorld.');
       clearTimeout(button._resetTimer);
       button._resetTimer = setTimeout(() => {
-        setButtonBusy(button, false);
-        showStatus('Ainda nao recebi um download 3MF. Teste o botao verde original para confirmar se ele baixa nesta pagina.');
+        resetButton(button);
+        showStatus('Nao recebi nenhum download 3MF. Clique em "Baixar AD5X" e depois no botao verde "Baixar 3MF".');
       }, 24000);
     } catch (error) {
       log('conversion start failed', error);
-      setButtonBusy(button, false);
+      resetButton(button);
       alert('Falha ao iniciar a conversão: ' + (error?.message || error));
     }
   }
@@ -246,6 +262,11 @@
         font-weight: 700;
         opacity: .74;
       }
+      .${HIGHLIGHT_CLASS} {
+        outline: 3px solid #02c91f !important;
+        outline-offset: 4px !important;
+        box-shadow: 0 0 0 5px rgba(2, 201, 31, .26), 0 0 26px rgba(2, 201, 31, .44) !important;
+      }
       @media (max-width: 640px) {
         #${BUTTON_ID} {
           --mw-flashforge-right: 16px;
@@ -306,16 +327,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (message.startsWith('Download detectado')) {
       clearTimeout(button._resetTimer);
       button._resetTimer = setTimeout(() => {
-        button.disabled = false;
-        button.setAttribute('aria-busy', 'false');
-        if (main) main.textContent = 'Baixar AD5X';
+        resetButton(button);
       }, 120000);
       if (main) main.textContent = 'Convertendo...';
     } else if (message.startsWith('Pronto') || message.startsWith('Falha') || message.startsWith('Nao detectei')) {
-      button.disabled = false;
-      button.setAttribute('aria-busy', 'false');
-      clearTimeout(button._resetTimer);
-      if (main) main.textContent = 'Baixar AD5X';
+      resetButton(button);
     } else if (main && message.startsWith('Aguardando')) {
       main.textContent = 'Preparando...';
     }
