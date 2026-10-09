@@ -4,7 +4,7 @@ Extensão Chrome (Manifest V3) em estágio inicial para adicionar ao MakerWorld 
 
 ## Calculadora de custo para impressão 3D
 
-Este repositório também inclui uma calculadora estática em `docs/`, pensada para publicação no GitHub Pages. Ela calcula custo unitário e custo total do lote considerando material, tempo de impressão, energia, perdas e extras. Custos de máquina e mão de obra ficam em branco por padrão e só entram no cálculo se forem preenchidos. A interface principal fica reduzida a impressora, peso, tempo e botão de cálculo, com configurações avançadas recolhidas.
+Este repositório também inclui uma calculadora estática em `docs/`, pensada para publicação no GitHub Pages. Ela calcula custo unitário e custo total do lote considerando material, tempo de impressão, energia, custo de máquina, perdas e extras. A mão de obra fica em branco por padrão e só entra no cálculo se for preenchida. A interface principal fica reduzida a impressora, peso, tempo e botão de cálculo, com configurações avançadas recolhidas.
 
 Para publicar, configure o GitHub Pages em **Settings > Pages** usando a branch principal e a pasta **/docs**. Não há build nem dependências externas.
 

@@ -6,10 +6,12 @@ const PRINTER_PRESETS = {
   ad5x: {
     label: "FlashForge AD5X",
     powerWatts: 120,
+    machineHourly: 3.5,
   },
   a1mini: {
     label: "Bambu Lab A1 mini",
     powerWatts: 90,
+    machineHourly: 2.5,
   },
 };
 
@@ -31,7 +33,7 @@ const DEFAULTS = {
   quantity: 1,
   powerWatts: PRINTER_PRESETS.ad5x.powerWatts,
   kwhPrice: SAO_PAULO_KWH_PRICE,
-  machineHourly: "",
+  machineHourly: PRINTER_PRESETS.ad5x.machineHourly,
   wastePercent: 8,
   setupMinutes: "",
   laborHourly: "",
@@ -39,7 +41,7 @@ const DEFAULTS = {
 };
 
 const STORAGE_KEY = "threeDQuoteCalculatorDefaults";
-const STORAGE_VERSION = 3;
+const STORAGE_VERSION = 4;
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -167,9 +169,13 @@ function getSavedDefaults() {
     }
 
     if (saved._version !== STORAGE_VERSION) {
-      migrated.machineHourly = DEFAULTS.machineHourly;
       migrated.setupMinutes = DEFAULTS.setupMinutes;
       migrated.laborHourly = DEFAULTS.laborHourly;
+
+      if (!String(saved.machineHourly ?? "").trim()) {
+        const preset = PRINTER_PRESETS[migrated.printerPreset] || PRINTER_PRESETS.ad5x;
+        migrated.machineHourly = preset.machineHourly;
+      }
 
       if (
         !saved.kwhPrice ||
@@ -224,6 +230,7 @@ function applyPrinterPreset() {
   }
 
   form.elements.powerWatts.value = preset.powerWatts;
+  form.elements.machineHourly.value = preset.machineHourly;
   updatePrinterMeta();
 }
 
