@@ -37,23 +37,37 @@
       if(u32(bytes,i)===0x06054b50){ eocd=i; break; }
     }
     if(eocd<0) throw new Error('ZIP/3MF inválido: EOCD não encontrado.');
-    const count=u16(bytes,eocd+10), cdOffset=u32(bytes,eocd+16);
-    let p=cdOffset; const entries=[];
+    const count=u16(bytes,eocd+10), cdOffset=u32(bytes,eocd+16), cdSize=u32(bytes,eocd+12);
+    if (u16(bytes,eocd+4) || u16(bytes,eocd+6) || u16(bytes,eocd+8) !== count ||
+        count === 0xffff || cdOffset + cdSize > eocd) {
+      throw new Error('ZIP/3MF invalido ou formato ZIP64/multidisco nao suportado.');
+    }
+    let p=cdOffset; const entries=[], names=new Set();
     for(let i=0;i<count;i++){
-      if(u32(bytes,p)!==0x02014b50) throw new Error('ZIP inválido: central directory corrompido.');
+      if(p+46>cdOffset+cdSize || u32(bytes,p)!==0x02014b50) throw new Error('ZIP inválido: central directory corrompido.');
       const method=u16(bytes,p+10), crc=u32(bytes,p+16), csize=u32(bytes,p+20), usize=u32(bytes,p+24);
       const nlen=u16(bytes,p+28), xlen=u16(bytes,p+30), clen=u16(bytes,p+32), local=u32(bytes,p+42);
+      if (p+46+nlen+xlen+clen>cdOffset+cdSize || local+30>cdOffset || (u16(bytes,p+8)&1)) {
+        throw new Error('ZIP invalido: entrada truncada ou criptografada.');
+      }
       const name=td.decode(bytes.slice(p+46,p+46+nlen));
+      if (names.has(name)) throw new Error(`ZIP invalido: entrada duplicada: ${name}`);
+      names.add(name);
       if(u32(bytes,local)!==0x04034b50) throw new Error('ZIP inválido: local header ausente.');
       const ln=u16(bytes,local+26), lx=u16(bytes,local+28), start=local+30+ln+lx;
+      if (start+csize>cdOffset) throw new Error(`ZIP invalido: dados truncados: ${name}`);
       const comp=bytes.slice(start,start+csize);
       let data;
       if(method===0) data=comp;
       else if(method===8) data=await inflateRaw(comp);
       else throw new Error(`ZIP usa método de compressão não suportado: ${method}`);
+      if (data.length !== usize || crc32(data) !== crc) {
+        throw new Error(`ZIP invalido: tamanho ou CRC incorreto: ${name}`);
+      }
       entries.push({name,data,method,crc,usize});
       p += 46+nlen+xlen+clen;
     }
+    if (p !== cdOffset+cdSize) throw new Error('ZIP invalido: tamanho do diretorio central incorreto.');
     return entries;
   }
 

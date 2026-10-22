@@ -13,7 +13,7 @@
     defaultFilamentVendor: 'Flashforge'
   };
 
-  const CONVERSION_VERSION = '0.2.7';
+  const CONVERSION_VERSION = '0.2.9';
 
   // Machine-specific values must come from the installed FlashForge/Orca profile, not the Bambu project.
   const DROP_EXACT = new Set([
@@ -26,7 +26,9 @@
     'printhost_apikey','printhost_user','printhost_password','flashforge_serial_number','printer_agent',
     'bed_custom_model','bed_custom_texture','bed_exclude_area','extruder_offset','printable_area',
     'print_compatible_printers','upward_compatible_machine',
-    'filament_start_gcode','filament_end_gcode'
+    'filament_start_gcode','filament_end_gcode',
+    'before_layer_change_gcode','layer_change_gcode','time_lapse_gcode',
+    'template_custom_gcode','printing_by_object_gcode','wrapping_detection_gcode'
   ]);
   const DROP_PREFIX = ['machine_', 'bbl_', 'ams_', 'scan_first_layer', 'timelapse_type'];
   const RENAME = {
@@ -39,6 +41,12 @@
     },
     support_style: {
       tree_organic: 'default'
+    },
+    tree_support_wall_count: {
+      '-1': '0'
+    },
+    raft_first_layer_expansion: {
+      '-1': '2'
     }
   };
   const FILAMENT_PRESET_BY_TYPE = {
@@ -52,7 +60,7 @@
     PVA: 'Flashforge Generic PVA',
     TPU: 'Flashforge TPU 95A @FF AD5X'
   };
-  const TEMP_KEYS = /(?:nozzle|filament|temperature|temp)(?!.*bed)/i;
+  const TEMP_KEYS = /^(?:nozzle_temperature(?:_initial_layer|_range_low|_range_high)?|idle_temperature)$/;
 
   function sameShape(old, value) {
     if (Array.isArray(old)) return Array.isArray(value) ? value : old.map(() => String(value));
@@ -83,7 +91,10 @@
       if (!(key in replacements)) return x;
       const next = replacements[key];
       report.valueReplaced.push(`${k}: ${key} → ${next}`);
-      return typeof x === 'string' ? next : sameShape(x, next);
+      if (k === 'raft_first_layer_expansion') {
+        report.warnings.push('Expansao automatica de suporte/raft (-1) nao existe no Flash Studio 2.4.2; aplicado o padrao de 2 mm.');
+      }
+      return typeof x === 'number' ? Number(next) : next;
     };
     return Array.isArray(v) ? v.map(replaceOne) : replaceOne(v);
   }
@@ -157,7 +168,6 @@
       let key2 = RENAME[key] || key;
       if (key2 !== key) report.renamed.push(`${key} → ${key2}`);
       let value = raw;
-      if (value && typeof value === 'object' && !Array.isArray(value)) value = convertJson(value, report);
       if (key2 === 'version' && typeof value === 'string' && /^\d+(?:\.\d+)+$/.test(value)) {
         if (value !== TARGET.slicerVersion) report.versionPatched.push(`${key2}: ${value} → ${TARGET.slicerVersion}`);
         value = TARGET.slicerVersion;
@@ -172,22 +182,30 @@
     set('printer_settings_id', TARGET.printerPreset);
     set('default_print_profile', TARGET.processPreset);
     set('print_settings_id', TARGET.processPreset);
+    out.print_compatible_printers = [TARGET.printerPreset];
     set('nozzle_diameter', TARGET.nozzle);
     if ('printer_variant' in out) set('printer_variant', TARGET.nozzle);
     if ('host_type' in out) delete out.host_type;
     if ('gcode_flavor' in out) delete out.gcode_flavor; // Let AD5X profile supply Klipper flavor.
     patchFilamentPresets(out, report);
 
-    // Keep process/filament overrides active. Slot 0 is process overrides in Bambu/Orca projects.
-    const keys = Object.keys(out).filter(k => !['different_settings_to_system'].includes(k));
-    const processKeys = keys.filter(k => !/^(filament_|nozzle_|bed_|cool_plate_|hot_plate_|textured_plate_)/.test(k));
-    const first = processKeys.sort().join(';');
-    if (Array.isArray(out.different_settings_to_system)) {
-      const arr = [...out.different_settings_to_system];
-      if (arr.length === 0) arr.push(first); else arr[0] = first;
-      out.different_settings_to_system = arr;
-      report.rebuiltDifferentSettings = true;
-    }
+    // Flash Studio splits these slots as process, each filament, then printer.
+    // Its preset loader filters the override keys by each collection's schema.
+    // Preserve source process/filament values, but inherit machine values from AD5X.
+    const ids = Array.isArray(out.filament_settings_id) ? out.filament_settings_id : [out.filament_settings_id];
+    const count = Array.isArray(out.filament_colour) ? out.filament_colour.length : ids.filter(Boolean).length;
+    const bookkeeping = new Set(['inherits', 'inherits_group', 'different_settings_to_system',
+      'compatible_machine_expression_group', 'compatible_process_expression_group',
+      'compatible_printers', 'compatible_prints', 'compatible_printers_condition', 'compatible_prints_condition']);
+    const overrides = Object.keys(out).filter(k => !bookkeeping.has(k)).sort().join(';');
+    out.inherits_group = [TARGET.processPreset,
+      ...Array.from({ length: count }, (_, i) => ids[i] || ids[0] || ''), TARGET.printerPreset];
+    out.different_settings_to_system = [overrides, ...Array(count).fill(overrides), ''];
+    out.compatible_machine_expression_group = Array(count + 2).fill('');
+    out.compatible_process_expression_group = Array(count).fill('');
+    for (const key of ['inherits', 'compatible_printers', 'compatible_prints',
+      'compatible_printers_condition', 'compatible_prints_condition']) delete out[key];
+    report.rebuiltDifferentSettings = true;
     return out;
   }
 
@@ -217,22 +235,19 @@
   function patchModelHeader(data, report) {
     const prefixSize = Math.min(data.length, 128 * 1024);
     const prefix = MiniZip.text(data.slice(0, prefixSize));
-    const patched = prefix.replace(
-      /(<metadata\s+name=(['"])Application\2\s*>)([^<]*)(<\/metadata>)/i,
-      (_match, open, _quote, oldValue, close) => {
-        if (oldValue !== TARGET.slicerApp) {
-          report.versionPatched.push(`Application: ${oldValue} → ${TARGET.slicerApp}`);
-        }
-        return `${open}${TARGET.slicerApp}${close}`;
-      }
-    );
-    if (patched === prefix) return data;
-    return concatBytes([MiniZip.bytes(patched), data.slice(prefixSize)]);
+    const match = /(<metadata\s+name=(['"])Application\2\s*>)([^<]*)(<\/metadata>)/i.exec(prefix);
+    if (!match || match[3] === TARGET.slicerApp) return data;
+    report.versionPatched.push(`Application: ${match[3]} → ${TARGET.slicerApp}`);
+    // Splice only the value's bytes. Re-encoding a truncated UTF-8 prefix can
+    // corrupt the following resource when a character crosses the byte limit.
+    const start = MiniZip.bytes(prefix.slice(0, match.index) + match[1]).length;
+    const end = start + MiniZip.bytes(match[3]).length;
+    return concatBytes([data.slice(0, start), MiniZip.bytes(TARGET.slicerApp), data.slice(end)]);
   }
 
   async function convert3mf(bytes) {
     const entries = await MiniZip.read(bytes);
-    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], valueReplaced: [], filamentPatched: [], capped: [], versionPatched: [], xmlPatched: 0, rebuiltDifferentSettings: false };
+    const report = { target: TARGET.printerPreset, jsonFiles: [], dropped: [], renamed: [], replaced: [], valueReplaced: [], filamentPatched: [], capped: [], versionPatched: [], warnings: [], xmlPatched: 0, rebuiltDifferentSettings: false };
     let foundProject = false;
 
     const out = entries.flatMap(ent => {
@@ -264,7 +279,7 @@
     // Add a small, harmless conversion note for diagnostics.
     out.push({
       name: 'Metadata/flashforge_conversion.json',
-      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: CONVERSION_VERSION, target: TARGET }, null, 2))
+      data: MiniZip.bytes(JSON.stringify({ converter: 'MakerWorld → FlashForge AD5X Chrome Extension', version: CONVERSION_VERSION, target: TARGET, warnings: report.warnings }, null, 2))
     });
 
     return { bytes: await MiniZip.write(out), report };

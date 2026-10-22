@@ -2,6 +2,38 @@
 
 Extensão Chrome (Manifest V3) em estágio inicial para adicionar ao MakerWorld uma opção de download direcionada à **FlashForge AD5X** e converter localmente projetos `.3mf` originalmente preparados para o ecossistema Bambu/Orca.
 
+## Atualização 0.2.9: fidelidade e validação
+
+A conversão preserva as malhas, referências, transforms, peças coloridas e configurações de camada/suporte do projeto. A herança de processo, de cada filamento e da impressora é reconstruída para os perfis AD5X. O nome do perfil-base `0.20mm Standard @FF AD5X` não determina a altura final: o ajuste de `layer_height` do projeto, inclusive `0.08`, continua ativo.
+
+O botão flutuante **Baixar AD5X** arma a conversão; em seguida clique no botão original **Baixar 3MF**. O arquivo recebe o nome do item. Após atualizar esta pasta, recarregue a extensão em `chrome://extensions` e a página do MakerWorld.
+
+O caso real ORE e Confie foi comparado estruturalmente e fatiado pela CLI do Flash Studio 2.4.2. Veja [o diagnóstico completo](reports/conversion-ore-confie.md), incluindo limitações, bounding boxes e comandos de reprodução. A validação visual da interface não foi concluída.
+
+Compatibilidade de suporte: `tree_support_wall_count=-1` (automático Bambu) vira `0` (automático Flash Studio). `raft_first_layer_expansion=-1` usa o padrão Flash Studio de 2 mm, registrado como aproximação no relatório; os algoritmos automáticos de expansão não são equivalentes. Valores explícitos válidos permanecem intactos.
+
+O leitor ZIP verifica CRC, tamanho, truncamento e recursos duplicados. A edição do metadado Application preserva os demais bytes do modelo, inclusive caracteres UTF-8 na borda do trecho examinado.
+
+### Testes e ferramentas locais
+
+Requisitos: Node.js 22 ou superior (CompressionStream/DecompressionStream com deflate-raw) e Python 3.9 ou superior. Não há dependências adicionais.
+
+```sh
+python3 -m unittest discover -s tests -v
+node scripts/convert.js original.3mf convertido.3mf
+python3 scripts/inspect_3mf.py original.3mf convertido.3mf --output comparacao.json
+```
+
+Os testes usam geometrias sintéticas próprias. Para também executar o caso real local, sem distribuí-lo no repositório:
+
+```sh
+ORIGINAL_3MF='/caminho/ORE+E+CONFIE+RESISTENTE.3mf' python3 -m unittest discover -s tests -v
+```
+
+`scripts/inspect_3mf.py` valida relações e índices, resolve componentes aninhados e calcula dimensões em milímetros aplicando transforms na ordem correta. Compara recursos, malhas, build, metadados por peça e cores. Unidades diferentes dentro de um mesmo pacote são rejeitadas pelo inspetor para evitar uma interpretação ambígua; isso é uma limitação da ferramenta de diagnóstico, não uma transformação do modelo.
+
+`scripts/resolve_profile.py` resolve a herança dos JSONs instalados para a opção `--load-settings` da CLI. Os arquivos gerados em `artifacts/` ficam apenas no computador e não são enviados ao GitHub.
+
 ## Calculadora de custo para impressão 3D
 
 Este repositório também inclui uma calculadora estática em `docs/`, pensada para publicação no GitHub Pages. Ela calcula custo unitário e custo total do lote considerando material, tempo de impressão, energia, custo de máquina, perdas e extras. A mão de obra fica em branco por padrão e só entra no cálculo se for preenchida. A interface principal fica reduzida a impressora, peso, tempo e botão de cálculo, com configurações avançadas recolhidas.
